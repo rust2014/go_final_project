@@ -19,7 +19,7 @@ func ConnectDB() *sql.DB {
 
 	var install bool
 	if err != nil {
-		install = true // если файл базы данных не существует, установить флаг установки
+		install = true // если файл базы данных не существует, то создаем файл через sql запросы из createTableAndIndex
 	} else if os.IsNotExist(err) {
 		log.Fatal(err)
 	}
