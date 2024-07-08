@@ -49,16 +49,9 @@ func NextDate(now time.Time, dateStr string, repeat string) (string, error) {
 		if err != nil || days < 1 || days > 400 { // проверка соответсвия
 			return "", errors.New("invalid number of days")
 		}
-		/**
-		if days == 1 && dateStr == now.Format(DefaultFormatDate) {
-			return dateStr, nil // (чинит тест 7) возвращаем сегодняшнюю дату если repeat d 1 и dateStr соответствует сегодня
+		if dateStr == now.Format(DefaultFormatDate) {
+			date = now
 		}
-		**/
-		if dateStr == now.Format(DefaultFormatDate) { // (чинит тест 6) возвращаем сегодняшнюю дату если dateStr соответствует today
-			return dateStr, nil
-		}
-		//(тест 7 не работает, так как после закрытия задачи не добавляется правило повторения и таскка не закрывается
-		//это происходит только с задачами today
 		for {
 			date = date.AddDate(0, 0, days) // добавление дней к дате now
 			if date.After(now) {            // если новая дата после текущей, возвращаем её
@@ -134,7 +127,7 @@ func AddTask(db *sql.DB, task models.Task) (int64, error) { // создание 
 		if err != nil {
 			return 0, errors.New("the date is in the wrong format")
 		}
-		if date.Before(now) {
+		if date.Before(now) && date.Format(DefaultFormatDate) != now.Format(DefaultFormatDate) { // пересчитываем дату, только если она в прошлом
 			if task.Repeat == "" {
 				task.Date = now.Format(DefaultFormatDate)
 			} else {
