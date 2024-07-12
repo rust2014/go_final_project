@@ -1,12 +1,14 @@
 package server
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/rust2014/go_final_project/database"
-	"github.com/rust2014/go_final_project/handlers"
+	"github.com/rust2014/go_final_project/services"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/rust2014/go_final_project/database"
+	"github.com/rust2014/go_final_project/handlers"
 
 	_ "modernc.org/sqlite"
 )
@@ -28,7 +30,7 @@ func Run() {
 	router := chi.NewRouter()
 	router.Handle("/*", fileServer) // обработчик файлов
 
-	router.Get("/api/nextdate", handlers.NextDateHandler) // Правила повторения задач, обработчик для вычисления следующей даты (3)
+	router.Get("/api/nextdate", services.NextDateHandler) // Правила повторения задач, обработчик для вычисления следующей даты (3)
 
 	router.Post("/api/task", handlers.HandlerTask(db))          // добавляем задачу в бд - AddTask (4)
 	router.Get("/api/task", handlers.HandlerGetTask(db))        // просмотр задачи (6)
