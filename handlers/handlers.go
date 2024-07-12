@@ -3,15 +3,36 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/rust2014/go_final_project/dates"
 	"github.com/rust2014/go_final_project/models"
 	"github.com/rust2014/go_final_project/services"
+	"github.com/rust2014/go_final_project/validation"
 )
 
-func HandlerTask(db *sql.DB) http.HandlerFunc { // обработчик для AddTask
+func NextDateHandler(w http.ResponseWriter, r *http.Request) { // GET-обработчик api/nextdate
+	now := r.FormValue("now")
+	date := r.FormValue("date")
+	repeat := r.FormValue("repeat")
+
+	timeNow, err := time.Parse(dates.DefaultDateFormat, now)
+	if err != nil {
+		http.Error(w, "invalid 'now' date format", http.StatusBadRequest) // вернет Invalid 'now' date format если не верный формат
+		return
+	}
+	nextDate, err := dates.NextDate(timeNow, date, repeat)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest) // вернет "key" is required
+		return
+	}
+	fmt.Fprintf(w, nextDate)
+}
+
+func HandlerTask(taskService *services.TaskService) http.HandlerFunc { // обработчик для AddTask
 	return func(w http.ResponseWriter, r *http.Request) {
 		var task models.Task
 		err := json.NewDecoder(r.Body).Decode(&task)
@@ -19,18 +40,18 @@ func HandlerTask(db *sql.DB) http.HandlerFunc { // обработчик для A
 			http.Error(w, `{"error": "JSON deserialization error:"}`, http.StatusBadRequest)
 			return
 		}
-		id, err := services.AddTask(db, task)
+		id, err := taskService.AddTask(task)
 		if err != nil {
-			http.Error(w, `{"error": "Error when adding a task:"}`, http.StatusBadRequest) // важная ошибка для тестов
+			http.Error(w, `{"error": "Error when adding a task:"}`, http.StatusBadRequest)
 			return
 		}
 		writeJSONResponse(w, http.StatusOK, map[string]interface{}{"id": id})
 	}
 }
 
-func HandlerGetTasks(db *sql.DB) http.HandlerFunc { // обработчик для GET-запроса /api/tasks
+func HandlerGetTasks(taskService *services.TaskService) http.HandlerFunc { // обработчик для GET-запроса /api/tasks
 	return func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := services.GetTasks(db)
+		tasks, err := taskService.GetTasks()
 		if err != nil {
 			http.Error(w, `{"error": "Request execution error"}`, http.StatusInternalServerError)
 			return
@@ -39,7 +60,7 @@ func HandlerGetTasks(db *sql.DB) http.HandlerFunc { // обработчик дл
 	}
 }
 
-func HandlerGetTask(db *sql.DB) http.HandlerFunc { // обработчик GET-запроса /api/task?id=
+func HandlerGetTask(taskService *services.TaskService) http.HandlerFunc { // обработчик GET-запроса /api/task?id=
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := r.URL.Query().Get("id")
 		if idStr == "" {
@@ -51,7 +72,7 @@ func HandlerGetTask(db *sql.DB) http.HandlerFunc { // обработчик GET-�
 			http.Error(w, `{"error": "Incorrect identifier format"}`, http.StatusBadRequest)
 			return
 		}
-		task, err := services.GetTask(db, id)
+		task, err := taskService.GetTask(id)
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
 			return
@@ -63,7 +84,7 @@ func HandlerGetTask(db *sql.DB) http.HandlerFunc { // обработчик GET-�
 	}
 }
 
-func HandlerPutTask(db *sql.DB) http.HandlerFunc { //обработчик PUT-запроса /api/task (проверка как в HandlerTask)
+func HandlerPutTask(taskService *services.TaskService) http.HandlerFunc { //обработчик PUT-запроса /api/task (проверка как в HandlerTask)
 	return func(w http.ResponseWriter, r *http.Request) {
 		var task models.Task
 		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
@@ -76,7 +97,7 @@ func HandlerPutTask(db *sql.DB) http.HandlerFunc { //обработчик PUT-з
 			return
 		}
 
-		if !services.IsValidJSON(task.Title) || !services.IsValidJSON(task.Comment) {
+		if !validation.IsValidJSON(task.Title) || !validation.IsValidJSON(task.Comment) {
 			http.Error(w, `{"error": "Incorrect characters in the title or comments"}`, http.StatusBadRequest)
 			return
 		}
@@ -86,31 +107,31 @@ func HandlerPutTask(db *sql.DB) http.HandlerFunc { //обработчик PUT-з
 			return
 		}
 
-		if _, err := time.Parse(services.DefaultFormatDate, task.Date); err != nil {
+		if _, err := time.Parse(dates.DefaultDateFormat, task.Date); err != nil {
 			http.Error(w, `{"error": "Incorrect date format"}`, http.StatusBadRequest)
 			return
 		}
 
-		if err := services.ValidateRepeatRule(task.Repeat); err != nil {
+		if err := validation.ValidateRepeatRule(task.Repeat); err != nil {
 			http.Error(w, `{"error": "Incorrect repeat format"}`, http.StatusBadRequest)
 			return
 		}
 
-		rowsAffected, err := services.UpdateTask(db, task)
+		err := taskService.UpdateTask(task)
 		if err != nil {
+			if err.Error() == "task not found" {
+				http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
+				return
+			}
 			http.Error(w, `{"error": "Request execution error"}`, http.StatusInternalServerError)
 			return
 		}
 
-		if rowsAffected == 0 {
-			http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
-			return
-		}
 		writeJSONResponse(w, http.StatusOK, map[string]interface{}{})
 	}
 }
 
-func HandlerDoneTask(db *sql.DB) http.HandlerFunc { // обработчик POST-запроса /api/task/done
+func HandlerDoneTask(taskService *services.TaskService) http.HandlerFunc { // обработчик POST-запроса /api/task/done
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := r.URL.Query().Get("id")
 		if idStr == "" {
@@ -122,7 +143,7 @@ func HandlerDoneTask(db *sql.DB) http.HandlerFunc { // обработчик POST
 			http.Error(w, `{"error": "Incorrect identifier format"}`, http.StatusBadRequest)
 			return
 		}
-		task, err := services.GetTask(db, id)
+		task, err := taskService.GetTask(id)
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
 			return
@@ -132,13 +153,13 @@ func HandlerDoneTask(db *sql.DB) http.HandlerFunc { // обработчик POST
 		}
 		nextDate := ""
 		if task.Repeat != "" {
-			nextDate, err = services.NextDate(time.Now(), task.Date, task.Repeat)
+			nextDate, err = dates.NextDate(time.Now(), task.Date, task.Repeat)
 			if err != nil {
 				http.Error(w, `{"error": "Error calculating the next date"}`, http.StatusInternalServerError)
 				return
 			}
 		}
-		if err := services.DoneTask(db, id, nextDate); err != nil {
+		if err := taskService.DoneTask(id, nextDate); err != nil {
 			http.Error(w, `{"error": "Task update error"}`, http.StatusInternalServerError)
 			return
 		}
@@ -146,7 +167,7 @@ func HandlerDoneTask(db *sql.DB) http.HandlerFunc { // обработчик POST
 	}
 }
 
-func HandlerDeleteTask(db *sql.DB) http.HandlerFunc { // обработчик Delete запроса /api/task
+func HandlerDeleteTask(taskService *services.TaskService) http.HandlerFunc { // обработчик Delete запроса /api/task
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := r.URL.Query().Get("id")
 		if idStr == "" {
@@ -158,13 +179,13 @@ func HandlerDeleteTask(db *sql.DB) http.HandlerFunc { // обработчик De
 			http.Error(w, `{"error": "Incorrect identifier format"}`, http.StatusBadRequest)
 			return
 		}
-		rowsAffected, err := services.DeleteTask(db, id)
+		err = taskService.DeleteTask(id)
 		if err != nil {
+			if err.Error() == "task not found" {
+				http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
+				return
+			}
 			http.Error(w, `{"error": "Task deletion error"}`, http.StatusInternalServerError)
-			return
-		}
-		if rowsAffected == 0 {
-			http.Error(w, `{"error": "Task not found"}`, http.StatusNotFound)
 			return
 		}
 		writeJSONResponse(w, http.StatusOK, map[string]interface{}{})

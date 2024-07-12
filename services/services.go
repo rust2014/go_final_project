@@ -2,13 +2,24 @@ package services
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/rust2014/go_final_project/models"
+	"github.com/rust2014/go_final_project/tests"
 )
 
-func GetTasks(db *sql.DB) ([]models.Task, error) {
+type TaskService struct {
+	DB *sql.DB
+}
+
+func NewTaskService(db *sql.DB) *TaskService {
+	return &TaskService{DB: db}
+}
+
+func (s *TaskService) GetTasks() ([]models.Task, error) {
 	tasks := []models.Task{}
-	rows, err := db.Query("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date LIMIT 50")
+	query := fmt.Sprintf("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date LIMIT %d", tests.TaskLimit)
+	rows, err := s.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -27,9 +38,9 @@ func GetTasks(db *sql.DB) ([]models.Task, error) {
 	return tasks, nil
 }
 
-func GetTask(db *sql.DB, id int) (*models.Task, error) {
+func (s *TaskService) GetTask(id int) (*models.Task, error) {
 	var task models.Task
-	err := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id).
+	err := s.DB.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id = ?", id).
 		Scan(&task.ID, &task.Date, &task.Title, &task.Comment, &task.Repeat)
 	if err != nil {
 		return nil, err
@@ -37,28 +48,42 @@ func GetTask(db *sql.DB, id int) (*models.Task, error) {
 	return &task, nil
 }
 
-func UpdateTask(db *sql.DB, task models.Task) (int64, error) {
-	result, err := db.Exec("UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ? WHERE id = ?", task.Date, task.Title, task.Comment, task.Repeat, task.ID)
+func (s *TaskService) UpdateTask(task models.Task) error {
+	result, err := s.DB.Exec("UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ? WHERE id = ?", task.Date, task.Title, task.Comment, task.Repeat, task.ID)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found")
+	}
+	return nil
 }
 
-func DoneTask(db *sql.DB, id int, nextDate string) error {
+func (s *TaskService) DoneTask(id int, nextDate string) error {
 	if nextDate == "" {
-		_, err := db.Exec("DELETE FROM scheduler WHERE id = ?", id)
+		_, err := s.DB.Exec("DELETE FROM scheduler WHERE id = ?", id)
 		return err
 	} else {
-		_, err := db.Exec("UPDATE scheduler SET date = ? WHERE id = ?", nextDate, id)
+		_, err := s.DB.Exec("UPDATE scheduler SET date = ? WHERE id = ?", nextDate, id)
 		return err
 	}
 }
 
-func DeleteTask(db *sql.DB, id int) (int64, error) {
-	result, err := db.Exec("DELETE FROM scheduler WHERE id = ?", id)
+func (s *TaskService) DeleteTask(id int) error {
+	result, err := s.DB.Exec("DELETE FROM scheduler WHERE id = ?", id)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	return result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found")
+	}
+	return nil
 }

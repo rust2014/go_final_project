@@ -1,4 +1,4 @@
-package services
+package validation
 
 import (
 	"unicode/utf8"
