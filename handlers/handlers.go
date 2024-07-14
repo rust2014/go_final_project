@@ -51,7 +51,8 @@ func HandlerTask(taskService *services.TaskService) http.HandlerFunc { // обр
 
 func HandlerGetTasks(taskService *services.TaskService) http.HandlerFunc { // обработчик для GET-запроса /api/tasks
 	return func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := taskService.GetTasks()
+		search := r.URL.Query().Get("search")
+		tasks, err := taskService.GetTasks(search)
 		if err != nil {
 			http.Error(w, `{"error": "Request execution error"}`, http.StatusInternalServerError)
 			return

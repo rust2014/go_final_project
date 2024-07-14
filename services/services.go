@@ -3,7 +3,9 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
+	"github.com/rust2014/go_final_project/dates"
 	"github.com/rust2014/go_final_project/models"
 	"github.com/rust2014/go_final_project/tests"
 )
@@ -16,10 +18,25 @@ func NewTaskService(db *sql.DB) *TaskService {
 	return &TaskService{DB: db}
 }
 
-func (s *TaskService) GetTasks() ([]models.Task, error) {
+func (s *TaskService) GetTasks(search string) ([]models.Task, error) {
 	tasks := []models.Task{}
-	query := fmt.Sprintf("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date LIMIT %d", tests.TaskLimit)
-	rows, err := s.DB.Query(query)
+	var rows *sql.Rows
+	var err error
+	if search == "" {
+		query := fmt.Sprintf("SELECT id, date, title, comment, repeat FROM scheduler ORDER BY date LIMIT %d", tests.TaskLimit)
+		rows, err = s.DB.Query(query)
+	} else {
+		// проверка, является ли строка поиска датой
+		if i, dateErr := time.Parse("02.01.2006", search); dateErr == nil {
+			// преобразорвание даты в 20060102
+			formattedDate := i.Format(dates.DefaultDateFormat)
+			rows, err = s.DB.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE date = ? ORDER BY date LIMIT ?", formattedDate, tests.TaskLimit)
+		} else {
+			searchPattern := "%" + search + "%"
+			rows, err = s.DB.Query("SELECT id, date, title, comment, repeat FROM scheduler WHERE title LIKE ? OR comment LIKE ? ORDER BY date LIMIT ?", searchPattern, searchPattern, tests.TaskLimit)
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +51,9 @@ func (s *TaskService) GetTasks() ([]models.Task, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if tasks == nil {
+		tasks = []models.Task{}
 	}
 	return tasks, nil
 }
